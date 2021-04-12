@@ -1,6 +1,6 @@
 package com.wedog.mysql.entity;
 
-import lombok.Builder;
+import com.wedog.mysql.service.PropertyFunction;
 import lombok.Data;
 
 import java.util.ArrayList;
@@ -11,7 +11,6 @@ import java.util.function.Function;
  * @author ly
  */
 @Data
-@Builder
-public class GroupBy {
-    private List<GroupByItem> groupByItems = new ArrayList<>();
+public class GroupByItem<T> {
+    private PropertyFunction<T> propertyFunction;
 }

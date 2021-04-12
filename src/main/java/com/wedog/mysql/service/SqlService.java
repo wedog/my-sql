@@ -18,5 +18,5 @@ public interface SqlService {
      * @param limit
      * @return
      */
-    List<User> query(List<User> data, Where where, OrderBy orderBy, GroupBy groupBy, Limit limit);
+    List<? extends Object> query(List<User> data, Where where, OrderBy orderBy, GroupBy groupBy, Limit limit);
 }

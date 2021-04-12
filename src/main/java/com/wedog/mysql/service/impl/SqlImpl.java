@@ -3,6 +3,7 @@ package com.wedog.mysql.service.impl;
 import com.wedog.mysql.entity.*;
 import com.wedog.mysql.enums.AndOrEnum;
 import com.wedog.mysql.enums.OperatorEnum;
+import com.wedog.mysql.enums.OrderEnum;
 import com.wedog.mysql.service.PropertyFunction;
 import com.wedog.mysql.service.SqlService;
 import lombok.extern.slf4j.Slf4j;
@@ -11,11 +12,12 @@ import org.springframework.util.CollectionUtils;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
+
+import static java.util.stream.Collectors.groupingBy;
 
 /**
  * @author ly
@@ -25,23 +27,80 @@ import java.util.stream.Collectors;
 public class SqlImpl implements SqlService {
 
     @Override
-    public List<User> query(List<User> data, Where where, OrderBy orderBy, GroupBy groupBy, Limit limit) {
+    public List<? extends Object> query(List<User> data, Where where, OrderBy orderBy, GroupBy groupBy, Limit limit) {
         if (CollectionUtils.isEmpty(data)) {
-            return data;
+            return Collections.singletonList(data);
         }
 
         // 过滤
         if (Objects.nonNull(where) && where.getConditions().size() > 0) {
             Predicate<User> predicate = makePredicate(where);
-            data = data.stream().filter(predicate).collect(Collectors.toList());
+            data = data.parallelStream().filter(predicate).collect(Collectors.toList());
         }
 
         // 排序
-        List<User> userList = data.stream()
-                .sorted(Comparator.comparing(User::getAge).reversed().thenComparing(User::getUserName, Comparator.naturalOrder()))
-                .collect(Collectors.toList());
+        if (Objects.nonNull(orderBy) && orderBy.getOrderByItemList().size() > 0) {
+            Comparator comparing = makeComparator(orderBy.getOrderByItemList());
+            data = (List<User>) data.parallelStream()
+                    .sorted(comparing)
+                    .collect(Collectors.toList());
+        }
 
-        return userList;
+        // 分组
+        if (Objects.nonNull(groupBy) && groupBy.getGroupByItems().size() > 0) {
+            // group返回数据格式不同于查询
+            Map<String, Long> groupMap = data.parallelStream().collect(groupingBy(o -> {
+                List<GroupByItem> groupByItems = groupBy.getGroupByItems();
+                StringBuilder stringBuilder = new StringBuilder();
+                for (int i = 0; i < groupByItems.size(); i++) {
+                    PropertyFunction propertyFunction = groupByItems.get(i).getPropertyFunction();
+                    stringBuilder.append(propertyFunction.getProperty(o));
+                    if (i != groupByItems.size()) {
+                        stringBuilder.append("_");
+                    }
+                }
+                return stringBuilder.toString();
+            }, Collectors.counting())); // 只计数
+            List list = new ArrayList();
+            list.add(groupMap);
+            data = list;
+        }
+
+        // 最大返回数
+        if (Objects.nonNull(limit)) {
+            data = data.parallelStream().limit(limit.getMaxSize()).collect(Collectors.toList());
+        }
+
+        return data;
+    }
+
+    /**
+     * 构造Comparator
+     *
+     * @param orderByItemList
+     * @return
+     */
+    private Comparator makeComparator(List<OrderByItem> orderByItemList) {
+        OrderByItem orderByItem = orderByItemList.get(0);
+        OrderEnum orderEnum = orderByItem.getOrderEnum();
+        Function function = orderByItem.getFunction();
+        Comparator comparing;
+        if (Objects.equals(OrderEnum.DESC, orderEnum)) {
+            comparing = Comparator.comparing(function, Comparator.reverseOrder());
+        } else {
+            comparing = Comparator.comparing(function, Comparator.naturalOrder());
+        }
+        for (int i = 1; i < orderByItemList.size(); i++) {
+            orderByItem = orderByItemList.get(i);
+            orderEnum = orderByItem.getOrderEnum();
+            function = orderByItem.getFunction();
+            if (Objects.equals(OrderEnum.DESC, orderEnum)) {
+                comparing = comparing.thenComparing(function, Comparator.reverseOrder());
+            } else {
+                comparing = comparing.thenComparing(function, Comparator.naturalOrder());
+            }
+        }
+        return comparing;
     }
 
     /**
@@ -89,7 +148,7 @@ public class SqlImpl implements SqlService {
      * @return
      */
     private boolean compare(Object value, Object expect, OperatorEnum operatorEnum) {
-        if (Objects.isNull(value)) {
+        if (Objects.isNull(value) || Objects.isNull(expect)) {
             return false;
         }
         return operatorEnum.compare(value, expect);
