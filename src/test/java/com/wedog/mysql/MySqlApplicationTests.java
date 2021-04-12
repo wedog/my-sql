@@ -29,7 +29,7 @@ class MySqlApplicationTests {
     void before() {
         log.info("<===============begin===================>");
         userList = new ArrayList<>();
-        // 构造数据
+        // 构造数据，超大数据量暂未考虑
         for (int i = 0; i < 1000; i++) {
             User user = User.builder()
                     .id(Long.valueOf(i))
